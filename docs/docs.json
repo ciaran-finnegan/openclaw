@@ -1059,7 +1059,7 @@
               },
               {
                 "group": "Configuration",
-                "pages": ["concepts/model-providers", "concepts/model-failover"]
+                "pages": ["concepts/model-providers", "concepts/model-failover", "routing"]
               },
               {
                 "group": "Providers",
