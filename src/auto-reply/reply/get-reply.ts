@@ -12,6 +12,8 @@ import { type OpenClawConfig, loadConfig } from "../../config/config.js";
 import { applyLinkUnderstanding } from "../../link-understanding/apply.js";
 import { applyMediaUnderstanding } from "../../media-understanding/apply.js";
 import { defaultRuntime } from "../../runtime.js";
+import { appendRoutingEvent } from "../../task-routing/catalogue/observed.js";
+import type { RoutingEvent } from "../../task-routing/catalogue/types.js";
 import { resolveTaskRoute } from "../../task-routing/resolve-task-route.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext } from "../templating.js";
@@ -211,10 +213,12 @@ export async function getReplyFromConfig(
     }
   }
 
-  // Task-aware routing (IRM Phase 1) — only when enabled and no higher-priority override.
+  // Task-aware routing (IRM Phase 1+2) — only when enabled and no higher-priority override.
   // Heartbeat model selection is handled above (lines 84-101); skip routing for heartbeats
   // to avoid conflicting with the dedicated heartbeat model config path.
   const routingConfig = agentCfg?.routing;
+  let activeRoutingDecision: ReturnType<typeof resolveTaskRoute> = null;
+  const routingStartMs = Date.now();
   if (
     routingConfig?.enabled &&
     !opts?.isHeartbeat &&
@@ -222,7 +226,7 @@ export async function getReplyFromConfig(
     !hasSessionModelOverride &&
     !channelModelOverride
   ) {
-    const routingDecision = resolveTaskRoute({
+    activeRoutingDecision = resolveTaskRoute({
       routingConfig,
       messageBody: bodyStripped ?? "",
       context: {
@@ -230,9 +234,9 @@ export async function getReplyFromConfig(
         isSubAgent: Boolean(sessionEntry.spawnedBy),
       },
     });
-    if (routingDecision) {
+    if (activeRoutingDecision) {
       const routedRef = resolveModelRefFromString({
-        raw: routingDecision.model,
+        raw: activeRoutingDecision.model,
         defaultProvider,
         aliasIndex,
       });
@@ -357,7 +361,7 @@ export async function getReplyFromConfig(
     workspaceDir,
   });
 
-  return runPreparedReply({
+  const reply = await runPreparedReply({
     ctx,
     sessionCtx,
     cfg,
@@ -402,4 +406,26 @@ export async function getReplyFromConfig(
     workspaceDir,
     abortedLastRun,
   });
+
+  // IRM Phase 2: log observed routing event (fire-and-forget).
+  // Note: latencyMs here is the total round-trip duration (routing decision through reply
+  // completion), not just model inference time. Token counts require deeper integration
+  // with the reply pipeline and will be wired in a follow-up.
+  if (activeRoutingDecision && routingConfig?.enabled) {
+    const hasReply = reply !== undefined && reply !== null;
+    const event: RoutingEvent = {
+      timestamp: new Date().toISOString(),
+      model: activeRoutingDecision.model,
+      taskType: activeRoutingDecision.classification.task,
+      success: hasReply,
+      retried: false,
+      escalated: false,
+      latencyMs: Date.now() - routingStartMs,
+      inputTokens: 0,
+      outputTokens: 0,
+    };
+    void appendRoutingEvent(event).catch(() => {});
+  }
+
+  return reply;
 }

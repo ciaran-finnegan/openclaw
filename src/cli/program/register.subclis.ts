@@ -279,6 +279,15 @@ const entries: SubCliEntry[] = [
     },
   },
   {
+    name: "routing",
+    description: "Manage task routing and model selection",
+    hasSubcommands: true,
+    register: async (program) => {
+      const mod = await import("../routing-cli.js");
+      mod.registerRoutingCli(program);
+    },
+  },
+  {
     name: "completion",
     description: "Generate shell completion script",
     hasSubcommands: false,

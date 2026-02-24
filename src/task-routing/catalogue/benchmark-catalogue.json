@@ -1,0 +1,273 @@
+{
+  "catalogueVersion": "1.0.0",
+  "lastUpdated": "2026-02-24",
+  "_note": "Scores are approximate, based on public benchmarks. Model IDs may change as providers update naming. Run `openclaw routing update-catalogue` to check for updates.",
+  "models": {
+    "anthropic/claude-opus-4-6": {
+      "displayName": "Claude Opus 4.6",
+      "suggestedTier": "frontier",
+      "taskScores": {
+        "coding": 0.95,
+        "planning": 0.96,
+        "writing": 0.94,
+        "chat": 0.93,
+        "status": 0.85,
+        "tool_use": 0.97,
+        "heartbeat": 0.8,
+        "sub_agent": 0.95
+      },
+      "cost": { "inputPerMTok": 15.0, "outputPerMTok": 75.0, "cacheReadPerMTok": 1.5 },
+      "latency": { "ttft_ms": 1800, "tps": 60 },
+      "contextWindow": 200000,
+      "toolSupport": true,
+      "reasoning": true
+    },
+    "anthropic/claude-sonnet-4-6": {
+      "displayName": "Claude Sonnet 4.6",
+      "suggestedTier": "mid",
+      "taskScores": {
+        "coding": 0.9,
+        "planning": 0.88,
+        "writing": 0.9,
+        "chat": 0.9,
+        "status": 0.82,
+        "tool_use": 0.92,
+        "heartbeat": 0.78,
+        "sub_agent": 0.88
+      },
+      "cost": { "inputPerMTok": 3.0, "outputPerMTok": 15.0, "cacheReadPerMTok": 0.3 },
+      "latency": { "ttft_ms": 900, "tps": 90 },
+      "contextWindow": 200000,
+      "toolSupport": true,
+      "reasoning": true
+    },
+    "anthropic/claude-haiku-4-5": {
+      "displayName": "Claude Haiku 4.5",
+      "suggestedTier": "cheap",
+      "taskScores": {
+        "coding": 0.75,
+        "planning": 0.72,
+        "writing": 0.78,
+        "chat": 0.82,
+        "status": 0.8,
+        "tool_use": 0.78,
+        "heartbeat": 0.85,
+        "sub_agent": 0.72
+      },
+      "cost": { "inputPerMTok": 0.8, "outputPerMTok": 4.0, "cacheReadPerMTok": 0.08 },
+      "latency": { "ttft_ms": 400, "tps": 150 },
+      "contextWindow": 200000,
+      "toolSupport": true,
+      "reasoning": false
+    },
+    "openai/gpt-5": {
+      "displayName": "GPT-5",
+      "suggestedTier": "frontier",
+      "taskScores": {
+        "coding": 0.93,
+        "planning": 0.92,
+        "writing": 0.92,
+        "chat": 0.91,
+        "status": 0.82,
+        "tool_use": 0.94,
+        "heartbeat": 0.78,
+        "sub_agent": 0.9
+      },
+      "cost": { "inputPerMTok": 10.0, "outputPerMTok": 30.0 },
+      "latency": { "ttft_ms": 1200, "tps": 80 },
+      "contextWindow": 128000,
+      "toolSupport": true,
+      "reasoning": true
+    },
+    "openai/gpt-5-mini": {
+      "displayName": "GPT-5 Mini",
+      "suggestedTier": "cheap",
+      "taskScores": {
+        "coding": 0.78,
+        "planning": 0.75,
+        "writing": 0.8,
+        "chat": 0.83,
+        "status": 0.8,
+        "tool_use": 0.8,
+        "heartbeat": 0.85,
+        "sub_agent": 0.74
+      },
+      "cost": { "inputPerMTok": 0.4, "outputPerMTok": 1.6 },
+      "latency": { "ttft_ms": 350, "tps": 160 },
+      "contextWindow": 128000,
+      "toolSupport": true,
+      "reasoning": false
+    },
+    "openai/o3": {
+      "displayName": "o3",
+      "suggestedTier": "frontier",
+      "taskScores": {
+        "coding": 0.96,
+        "planning": 0.94,
+        "writing": 0.85,
+        "chat": 0.82,
+        "status": 0.75,
+        "tool_use": 0.9,
+        "heartbeat": 0.7,
+        "sub_agent": 0.92
+      },
+      "cost": { "inputPerMTok": 10.0, "outputPerMTok": 40.0 },
+      "latency": { "ttft_ms": 3000, "tps": 40 },
+      "contextWindow": 200000,
+      "toolSupport": true,
+      "reasoning": true
+    },
+    "openai/o4-mini": {
+      "displayName": "o4-mini",
+      "suggestedTier": "mid",
+      "taskScores": {
+        "coding": 0.88,
+        "planning": 0.85,
+        "writing": 0.8,
+        "chat": 0.8,
+        "status": 0.78,
+        "tool_use": 0.85,
+        "heartbeat": 0.75,
+        "sub_agent": 0.84
+      },
+      "cost": { "inputPerMTok": 1.1, "outputPerMTok": 4.4 },
+      "latency": { "ttft_ms": 1500, "tps": 70 },
+      "contextWindow": 200000,
+      "toolSupport": true,
+      "reasoning": true
+    },
+    "google/gemini-2.5-pro": {
+      "displayName": "Gemini 2.5 Pro",
+      "suggestedTier": "frontier",
+      "taskScores": {
+        "coding": 0.92,
+        "planning": 0.9,
+        "writing": 0.9,
+        "chat": 0.88,
+        "status": 0.8,
+        "tool_use": 0.91,
+        "heartbeat": 0.76,
+        "sub_agent": 0.88
+      },
+      "cost": { "inputPerMTok": 1.25, "outputPerMTok": 10.0 },
+      "latency": { "ttft_ms": 1000, "tps": 85 },
+      "contextWindow": 1000000,
+      "toolSupport": true,
+      "reasoning": true
+    },
+    "google/gemini-2.5-flash": {
+      "displayName": "Gemini 2.5 Flash",
+      "suggestedTier": "mid",
+      "taskScores": {
+        "coding": 0.85,
+        "planning": 0.82,
+        "writing": 0.84,
+        "chat": 0.85,
+        "status": 0.8,
+        "tool_use": 0.84,
+        "heartbeat": 0.82,
+        "sub_agent": 0.8
+      },
+      "cost": { "inputPerMTok": 0.15, "outputPerMTok": 0.6 },
+      "latency": { "ttft_ms": 400, "tps": 200 },
+      "contextWindow": 1000000,
+      "toolSupport": true,
+      "reasoning": true
+    },
+    "google/gemini-2.0-flash": {
+      "displayName": "Gemini 2.0 Flash",
+      "suggestedTier": "cheap",
+      "taskScores": {
+        "coding": 0.78,
+        "planning": 0.75,
+        "writing": 0.8,
+        "chat": 0.82,
+        "status": 0.8,
+        "tool_use": 0.78,
+        "heartbeat": 0.84,
+        "sub_agent": 0.74
+      },
+      "cost": { "inputPerMTok": 0.1, "outputPerMTok": 0.4 },
+      "latency": { "ttft_ms": 300, "tps": 220 },
+      "contextWindow": 1000000,
+      "toolSupport": true,
+      "reasoning": false
+    },
+    "mistral/mistral-large": {
+      "displayName": "Mistral Large",
+      "suggestedTier": "mid",
+      "taskScores": {
+        "coding": 0.83,
+        "planning": 0.8,
+        "writing": 0.82,
+        "chat": 0.83,
+        "status": 0.78,
+        "tool_use": 0.82,
+        "heartbeat": 0.76,
+        "sub_agent": 0.78
+      },
+      "cost": { "inputPerMTok": 2.0, "outputPerMTok": 6.0 },
+      "latency": { "ttft_ms": 600, "tps": 100 },
+      "contextWindow": 128000,
+      "toolSupport": true,
+      "reasoning": false
+    },
+    "mistral/mistral-small": {
+      "displayName": "Mistral Small",
+      "suggestedTier": "cheap",
+      "taskScores": {
+        "coding": 0.7,
+        "planning": 0.65,
+        "writing": 0.72,
+        "chat": 0.75,
+        "status": 0.75,
+        "tool_use": 0.68,
+        "heartbeat": 0.8,
+        "sub_agent": 0.62
+      },
+      "cost": { "inputPerMTok": 0.1, "outputPerMTok": 0.3 },
+      "latency": { "ttft_ms": 300, "tps": 180 },
+      "contextWindow": 128000,
+      "toolSupport": true,
+      "reasoning": false
+    },
+    "openrouter/deepseek-r1": {
+      "displayName": "DeepSeek R1",
+      "suggestedTier": "frontier",
+      "taskScores": {
+        "coding": 0.91,
+        "planning": 0.88,
+        "writing": 0.82,
+        "chat": 0.8,
+        "status": 0.72,
+        "tool_use": 0.78,
+        "heartbeat": 0.68,
+        "sub_agent": 0.85
+      },
+      "cost": { "inputPerMTok": 0.55, "outputPerMTok": 2.19 },
+      "latency": { "ttft_ms": 2500, "tps": 35 },
+      "contextWindow": 128000,
+      "toolSupport": false,
+      "reasoning": true
+    },
+    "openrouter/llama-4-maverick": {
+      "displayName": "Llama 4 Maverick",
+      "suggestedTier": "mid",
+      "taskScores": {
+        "coding": 0.82,
+        "planning": 0.78,
+        "writing": 0.8,
+        "chat": 0.82,
+        "status": 0.76,
+        "tool_use": 0.75,
+        "heartbeat": 0.78,
+        "sub_agent": 0.76
+      },
+      "cost": { "inputPerMTok": 0.2, "outputPerMTok": 0.6 },
+      "latency": { "ttft_ms": 500, "tps": 120 },
+      "contextWindow": 1000000,
+      "toolSupport": true,
+      "reasoning": false
+    }
+  }
+}

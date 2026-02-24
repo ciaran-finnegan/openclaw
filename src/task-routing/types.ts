@@ -37,10 +37,20 @@ export type TaskRoutingConfig = {
   tiers?: Record<string, TaskRoutingTierConfig>;
   taskMap?: Partial<Record<TaskType, string>>;
   classifier?: TaskRoutingClassifierConfig;
+  scorer?: {
+    weights?: {
+      quality?: number;
+      cost?: number;
+      speed?: number;
+      contextFit?: number;
+    };
+  };
 };
 
 export type RoutingDecision = {
   classification: ClassificationResult;
   tier: string;
   model: string;
+  /** Composite score from the model scorer, if available. */
+  score?: number;
 };
