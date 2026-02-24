@@ -190,6 +190,15 @@ export const AgentDefaultsSchema = z
           })
           .strict()
           .optional(),
+        budget: z
+          .object({
+            enabled: z.boolean().optional(),
+            dailyLimit: z.number().positive().optional(),
+            monthlyLimit: z.number().positive().optional(),
+            overBudgetAction: z.enum(["downgrade", "block", "warn"]).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

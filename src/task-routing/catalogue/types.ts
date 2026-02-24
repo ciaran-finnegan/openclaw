@@ -63,6 +63,14 @@ export type RoutingEvent = {
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
+  /** USD cost of this request (input + output). */
+  actualCost?: number;
+  /** Estimated savings vs. frontier model for the same token counts. */
+  savedCost?: number;
+  /** Model that would have been used without routing (frontier tier default). */
+  wouldHaveUsedModel?: string;
+  /** Time spent in classification + scoring, not the full round-trip. */
+  routingLatencyMs?: number;
 };
 
 /** Aggregated observed performance for a model+task pair. */
@@ -79,6 +87,25 @@ export type ObservedPerformance = {
   avgOutputTokens: number;
   userOverrideRate: number;
   effectiveScore: number;
+};
+
+// ---------------------------------------------------------------------------
+// Routing feedback events (quality safeguards / feedback loop)
+// ---------------------------------------------------------------------------
+
+/** Signal types that indicate a routing miss or user correction. */
+export type RoutingFeedbackSignal = "model_override" | "retry" | "escalation" | "user_re_ask";
+
+/** A feedback event logged when routing decisions are corrected or fail. */
+export type RoutingFeedbackEvent = {
+  timestamp: string;
+  sessionKey: string;
+  originalModel: string;
+  originalTaskType: TaskType;
+  signal: RoutingFeedbackSignal;
+  /** What model the user/system switched to (for model_override and escalation). */
+  overriddenTo?: string;
+  reason?: string;
 };
 
 // ---------------------------------------------------------------------------

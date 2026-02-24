@@ -96,6 +96,16 @@ function appendUnscheduledReminderNote(payloads: ReplyPayload[]): ReplyPayload[]
 // Track sessions pending post-compaction read audit (Layer 3)
 const pendingPostCompactionAudits = new Map<string, boolean>();
 
+/** Mutable ref populated by runReplyAgent with token usage for routing cost tracking. */
+export type UsageCapture = {
+  input?: number;
+  output?: number;
+  /** True if a fallback occurred during this run. */
+  fallbackOccurred?: boolean;
+  /** The model that was actually used after fallback. */
+  fallbackModel?: string;
+};
+
 export async function runReplyAgent(params: {
   commandBody: string;
   followupRun: FollowupRun;
@@ -126,6 +136,8 @@ export async function runReplyAgent(params: {
   sessionCtx: TemplateContext;
   shouldInjectGroupIntro: boolean;
   typingMode: TypingMode;
+  /** Mutable ref populated with token usage after the run completes. */
+  usageCapture?: UsageCapture;
 }): Promise<ReplyPayload | ReplyPayload[] | undefined> {
   const {
     commandBody,
@@ -152,6 +164,7 @@ export async function runReplyAgent(params: {
     sessionCtx,
     shouldInjectGroupIntro,
     typingMode,
+    usageCapture,
   } = params;
 
   let activeSessionEntry = sessionEntry;
@@ -431,6 +444,10 @@ export async function runReplyAgent(params: {
     }
 
     const usage = runResult.meta?.agentMeta?.usage;
+    if (usageCapture && usage) {
+      usageCapture.input = usage.input ?? 0;
+      usageCapture.output = usage.output ?? 0;
+    }
     const promptTokens = runResult.meta?.agentMeta?.promptTokens;
     const modelUsed = runResult.meta?.agentMeta?.model ?? fallbackModel ?? defaultModel;
     const providerUsed =
@@ -448,6 +465,12 @@ export async function runReplyAgent(params: {
       attempts: fallbackAttempts,
       state: fallbackStateEntry,
     });
+
+    // Populate fallback info for routing escalation detection.
+    if (usageCapture && fallbackTransition.fallbackTransitioned) {
+      usageCapture.fallbackOccurred = true;
+      usageCapture.fallbackModel = `${providerUsed}/${modelUsed}`;
+    }
     if (fallbackTransition.stateChanged) {
       if (fallbackStateEntry) {
         fallbackStateEntry.fallbackNoticeSelectedModel = fallbackTransition.nextState.selectedModel;

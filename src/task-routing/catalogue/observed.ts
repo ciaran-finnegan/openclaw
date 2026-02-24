@@ -2,7 +2,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { resolveStateDir } from "../../config/paths.js";
 import type { TaskType } from "../types.js";
-import type { ObservedPerformance, RoutingEvent } from "./types.js";
+import type { ObservedPerformance, RoutingEvent, RoutingFeedbackEvent } from "./types.js";
 
 const ROUTING_DIR = "routing";
 const OBSERVED_FILENAME = "observed.jsonl";
@@ -63,6 +63,53 @@ export async function readRoutingEvents(stateDir?: string): Promise<RoutingEvent
   return events;
 }
 
+/** Cost summary for a given time period. */
+export type PeriodCostSummary = {
+  period: "day" | "month";
+  totalCost: number;
+  totalSaved: number;
+  requestCount: number;
+  costByTaskType: Partial<Record<TaskType, number>>;
+};
+
+/**
+ * Sum actualCost from routing events within the current day or month.
+ * Used by the budget gate to determine spend-so-far.
+ */
+export async function aggregateCostForPeriod(
+  period: "day" | "month",
+  stateDir?: string,
+): Promise<PeriodCostSummary> {
+  const events = await readRoutingEvents(stateDir);
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const monthStr = now.toISOString().slice(0, 7); // YYYY-MM
+
+  const matching = events.filter((e) => {
+    const ts = e.timestamp.slice(0, period === "day" ? 10 : 7);
+    return ts === (period === "day" ? todayStr : monthStr);
+  });
+
+  let totalCost = 0;
+  let totalSaved = 0;
+  const costByTaskType: Partial<Record<TaskType, number>> = {};
+
+  for (const e of matching) {
+    const cost = e.actualCost ?? 0;
+    totalCost += cost;
+    totalSaved += e.savedCost ?? 0;
+    costByTaskType[e.taskType] = (costByTaskType[e.taskType] ?? 0) + cost;
+  }
+
+  return {
+    period,
+    totalCost,
+    totalSaved,
+    requestCount: matching.length,
+    costByTaskType,
+  };
+}
+
 /**
  * Aggregate routing events into observed performance for a model+task pair.
  *
@@ -113,4 +160,60 @@ export async function aggregateObserved(
     userOverrideRate: 0, // Tracked separately in future
     effectiveScore,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Routing feedback events (Phase 4)
+// ---------------------------------------------------------------------------
+
+const FEEDBACK_FILENAME = "feedback.jsonl";
+const MAX_FEEDBACK_EVENTS = 5_000;
+
+/** Resolve path to the feedback JSONL log. */
+export function resolveFeedbackPath(stateDir?: string): string {
+  const base = stateDir ?? resolveStateDir();
+  return path.join(base, ROUTING_DIR, FEEDBACK_FILENAME);
+}
+
+/** Append a feedback event to the JSONL log (fire-and-forget). */
+export async function appendRoutingFeedback(
+  event: RoutingFeedbackEvent,
+  stateDir?: string,
+): Promise<void> {
+  const filePath = resolveFeedbackPath(stateDir);
+  await fsp.mkdir(path.dirname(filePath), { recursive: true });
+  await fsp.appendFile(filePath, `${JSON.stringify(event)}\n`, "utf8");
+}
+
+/**
+ * Read feedback events from the JSONL log.
+ * Returns at most the last {@link MAX_FEEDBACK_EVENTS} events.
+ */
+export async function readRoutingFeedback(stateDir?: string): Promise<RoutingFeedbackEvent[]> {
+  const filePath = resolveFeedbackPath(stateDir);
+
+  let content: string;
+  try {
+    content = await fsp.readFile(filePath, "utf8");
+  } catch {
+    return [];
+  }
+
+  const lines = content.split("\n");
+  const events: RoutingFeedbackEvent[] = [];
+
+  for (let i = lines.length - 1; i >= 0 && events.length < MAX_FEEDBACK_EVENTS; i--) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      events.push(JSON.parse(trimmed) as RoutingFeedbackEvent);
+    } catch {
+      // Skip malformed lines
+    }
+  }
+
+  events.reverse();
+  return events;
 }

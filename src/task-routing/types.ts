@@ -31,6 +31,19 @@ export type TaskRoutingClassifierConfig = {
   fallbackTier?: string;
 };
 
+/** Action to take when budget is exhausted. */
+export type OverBudgetAction = "downgrade" | "block" | "warn";
+
+export type BudgetConfig = {
+  enabled?: boolean;
+  /** Maximum daily spend in USD. */
+  dailyLimit?: number;
+  /** Maximum monthly spend in USD. */
+  monthlyLimit?: number;
+  /** What to do when the budget is exceeded. */
+  overBudgetAction?: OverBudgetAction;
+};
+
 export type TaskRoutingConfig = {
   enabled?: boolean;
   strategy?: "task-aware";
@@ -45,6 +58,7 @@ export type TaskRoutingConfig = {
       contextFit?: number;
     };
   };
+  budget?: BudgetConfig;
 };
 
 export type RoutingDecision = {

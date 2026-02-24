@@ -12,13 +12,20 @@ import { type OpenClawConfig, loadConfig } from "../../config/config.js";
 import { applyLinkUnderstanding } from "../../link-understanding/apply.js";
 import { applyMediaUnderstanding } from "../../media-understanding/apply.js";
 import { defaultRuntime } from "../../runtime.js";
-import { appendRoutingEvent } from "../../task-routing/catalogue/observed.js";
-import type { RoutingEvent } from "../../task-routing/catalogue/types.js";
+import { isModelAllowed } from "../../task-routing/allowlist.js";
+import { applyBudgetGate } from "../../task-routing/catalogue/budget.js";
+import { getCatalogueEntry } from "../../task-routing/catalogue/catalogue.js";
+import {
+  appendRoutingEvent,
+  appendRoutingFeedback,
+} from "../../task-routing/catalogue/observed.js";
+import type { RoutingEvent, RoutingFeedbackEvent } from "../../task-routing/catalogue/types.js";
 import { resolveTaskRoute } from "../../task-routing/resolve-task-route.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext } from "../templating.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
+import type { UsageCapture } from "./agent-runner.js";
 import { resolveDefaultModel } from "./directive-handling.js";
 import { resolveReplyDirectives } from "./get-reply-directives.js";
 import { handleInlineActions } from "./get-reply-inline-actions.js";
@@ -213,12 +220,14 @@ export async function getReplyFromConfig(
     }
   }
 
-  // Task-aware routing (IRM Phase 1+2) — only when enabled and no higher-priority override.
-  // Heartbeat model selection is handled above (lines 84-101); skip routing for heartbeats
+  // Task-aware routing (IRM Phase 1+2+3) — only when enabled and no higher-priority override.
+  // Heartbeat model selection is handled above; skip routing for heartbeats
   // to avoid conflicting with the dedicated heartbeat model config path.
   const routingConfig = agentCfg?.routing;
   let activeRoutingDecision: ReturnType<typeof resolveTaskRoute> = null;
-  const routingStartMs = Date.now();
+  let routingDecisionMs = 0; // time spent in budget gate + classification + scoring
+  let activeBudgetGate: Awaited<ReturnType<typeof applyBudgetGate>> | undefined;
+  const replyStartMs = Date.now(); // tracks total round-trip for latencyMs
   if (
     routingConfig?.enabled &&
     !opts?.isHeartbeat &&
@@ -226,6 +235,13 @@ export async function getReplyFromConfig(
     !hasSessionModelOverride &&
     !channelModelOverride
   ) {
+    // IRM Phase 3: compute budget gate before routing decision.
+    const routingStartMs = Date.now();
+    const budgetGate = routingConfig.budget?.enabled
+      ? await applyBudgetGate(routingConfig.budget)
+      : undefined;
+    activeBudgetGate = budgetGate;
+
     activeRoutingDecision = resolveTaskRoute({
       routingConfig,
       messageBody: bodyStripped ?? "",
@@ -233,7 +249,16 @@ export async function getReplyFromConfig(
         isHeartbeat: false,
         isSubAgent: Boolean(sessionEntry.spawnedBy),
       },
+      budgetGate,
     });
+    routingDecisionMs = Date.now() - routingStartMs;
+
+    // Allowlist enforcement: verify the routed model exists in the user's
+    // provider config. If not, skip routing for this request.
+    if (activeRoutingDecision && !isModelAllowed(activeRoutingDecision.model, cfg)) {
+      activeRoutingDecision = null;
+    }
+
     if (activeRoutingDecision) {
       const routedRef = resolveModelRefFromString({
         raw: activeRoutingDecision.model,
@@ -309,6 +334,23 @@ export async function getReplyFromConfig(
   provider = resolvedProvider;
   model = resolvedModel;
 
+  // Phase 4: if routing was active and the user switched models via /model directive,
+  // log a model_override feedback event.
+  if (activeRoutingDecision && sessionKey) {
+    const resolvedLabel = `${resolvedProvider}/${resolvedModel}`;
+    if (resolvedLabel !== activeRoutingDecision.model) {
+      const feedbackEvent: RoutingFeedbackEvent = {
+        timestamp: new Date().toISOString(),
+        sessionKey,
+        originalModel: activeRoutingDecision.model,
+        originalTaskType: activeRoutingDecision.classification.task,
+        signal: "model_override",
+        overriddenTo: resolvedLabel,
+      };
+      void appendRoutingFeedback(feedbackEvent).catch(() => {});
+    }
+  }
+
   const inlineActionResult = await handleInlineActions({
     ctx,
     sessionCtx,
@@ -361,6 +403,9 @@ export async function getReplyFromConfig(
     workspaceDir,
   });
 
+  // IRM Phase 3: capture token usage for cost tracking in routing events.
+  const usageCapture: UsageCapture = {};
+
   const reply = await runPreparedReply({
     ctx,
     sessionCtx,
@@ -405,26 +450,98 @@ export async function getReplyFromConfig(
     storePath,
     workspaceDir,
     abortedLastRun,
+    usageCapture,
   });
 
-  // IRM Phase 2: log observed routing event (fire-and-forget).
-  // Note: latencyMs here is the total round-trip duration (routing decision through reply
-  // completion), not just model inference time. Token counts require deeper integration
-  // with the reply pipeline and will be wired in a follow-up.
+  // IRM Phase 3: log observed routing event with real token counts and cost.
   if (activeRoutingDecision && routingConfig?.enabled) {
     const hasReply = reply !== undefined && reply !== null;
+    const inputTokens = usageCapture.input ?? 0;
+    const outputTokens = usageCapture.output ?? 0;
+
+    // Calculate actual cost using the catalogue's per-MTok pricing.
+    const catalogueEntry = getCatalogueEntry(activeRoutingDecision.model);
+    const actualCost = catalogueEntry
+      ? (inputTokens * catalogueEntry.cost.inputPerMTok +
+          outputTokens * catalogueEntry.cost.outputPerMTok) /
+        1_000_000
+      : undefined;
+
+    // Estimate savings vs frontier. Clamp to zero — if the routed model
+    // is more expensive (stale pricing, unusual token mix), don't report
+    // negative savings which would confuse the stats display.
+    const frontierModel = routingConfig.tiers?.frontier?.model;
+    let savedCost: number | undefined;
+    let wouldHaveUsedModel: string | undefined;
+    if (frontierModel && activeRoutingDecision.tier !== "frontier" && actualCost !== undefined) {
+      const frontierEntry = getCatalogueEntry(frontierModel);
+      if (frontierEntry) {
+        const frontierCost =
+          (inputTokens * frontierEntry.cost.inputPerMTok +
+            outputTokens * frontierEntry.cost.outputPerMTok) /
+          1_000_000;
+        savedCost = Math.max(0, frontierCost - actualCost);
+        wouldHaveUsedModel = frontierModel;
+      }
+    }
+
+    // Phase 4: detect fallback → set retried/escalated flags.
+    const retried = usageCapture.fallbackOccurred === true;
+    let escalated = false;
+    if (retried && usageCapture.fallbackModel && routingConfig.tiers) {
+      // Check if the fallback model belongs to a higher tier than the originally routed tier.
+      const routedTier = activeRoutingDecision.tier;
+      const fallbackModelRef = usageCapture.fallbackModel;
+      const tierOrder = ["cheap", "mid", "frontier"];
+      const routedIdx = tierOrder.indexOf(routedTier);
+      // Find which tier the fallback model belongs to.
+      let fallbackIdx = -1;
+      for (const [name, tc] of Object.entries(routingConfig.tiers)) {
+        if (tc.model === fallbackModelRef || fallbackModelRef.endsWith(`/${tc.model}`)) {
+          fallbackIdx = tierOrder.indexOf(name);
+          break;
+        }
+      }
+      escalated = fallbackIdx > routedIdx && routedIdx !== -1;
+    }
+
     const event: RoutingEvent = {
       timestamp: new Date().toISOString(),
       model: activeRoutingDecision.model,
       taskType: activeRoutingDecision.classification.task,
       success: hasReply,
-      retried: false,
-      escalated: false,
-      latencyMs: Date.now() - routingStartMs,
-      inputTokens: 0,
-      outputTokens: 0,
+      retried,
+      escalated,
+      // latencyMs: total round-trip (routing decision through reply completion).
+      // routingLatencyMs: time spent in classification + scoring only.
+      latencyMs: Date.now() - replyStartMs,
+      inputTokens,
+      outputTokens,
+      actualCost,
+      savedCost,
+      wouldHaveUsedModel,
+      routingLatencyMs: routingDecisionMs,
     };
     void appendRoutingEvent(event).catch(() => {});
+
+    // Phase 4: log feedback events for retry/escalation.
+    if (retried && sessionKey) {
+      const feedbackEvent: RoutingFeedbackEvent = {
+        timestamp: new Date().toISOString(),
+        sessionKey,
+        originalModel: activeRoutingDecision.model,
+        originalTaskType: activeRoutingDecision.classification.task,
+        signal: escalated ? "escalation" : "retry",
+        overriddenTo: usageCapture.fallbackModel,
+        reason: "fallback triggered during agent run",
+      };
+      void appendRoutingFeedback(feedbackEvent).catch(() => {});
+    }
+  }
+
+  // Surface budget warning to the operator when overBudgetAction is "warn".
+  if (activeBudgetGate?.warn && activeBudgetGate.reason) {
+    defaultRuntime.log("warn", `[routing] ${activeBudgetGate.reason}`);
   }
 
   return reply;

@@ -54,4 +54,41 @@ export function registerRoutingCli(program: Command) {
         await routingSuggestTiersCommand(opts);
       });
     });
+
+  routing
+    .command("stats")
+    .description("Show routing cost summary and savings")
+    .option("--json", "Output JSON", false)
+    .option("--detailed", "Show per-task-type and per-model breakdown", false)
+    .option("--days <n>", "Lookback period in days (default: 30)")
+    .action(async (opts) => {
+      await runRoutingCommand(async () => {
+        const { routingStatsCommand } = await import("../commands/routing/stats.js");
+        await routingStatsCommand(opts);
+      });
+    });
+
+  routing
+    .command("log")
+    .description("Show recent routing decisions")
+    .option("--tail <n>", "Number of recent events to show (default: 20)")
+    .option("--json", "Output JSON", false)
+    .action(async (opts) => {
+      await runRoutingCommand(async () => {
+        const { routingLogCommand } = await import("../commands/routing/log.js");
+        await routingLogCommand(opts);
+      });
+    });
+
+  routing
+    .command("feedback")
+    .description("Show recent routing feedback events (overrides, retries, escalations)")
+    .option("--tail <n>", "Number of recent events to show (default: 20)")
+    .option("--json", "Output JSON", false)
+    .action(async (opts) => {
+      await runRoutingCommand(async () => {
+        const { routingFeedbackCommand } = await import("../commands/routing/feedback.js");
+        await routingFeedbackCommand(opts);
+      });
+    });
 }
