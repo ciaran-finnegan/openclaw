@@ -1,4 +1,5 @@
 import type { ChannelId } from "../channels/plugins/types.js";
+import type { TaskRoutingConfig } from "../task-routing/types.js";
 import type { AgentModelConfig, AgentSandboxConfig } from "./types.agents-shared.js";
 import type {
   BlockStreamingChunkConfig,
@@ -254,6 +255,8 @@ export type AgentDefaultsConfig = {
   };
   /** Optional sandbox settings for non-main sessions. */
   sandbox?: AgentSandboxConfig;
+  /** Intelligent routing: task-aware model selection (opt-in, default: disabled). */
+  routing?: TaskRoutingConfig;
 };
 
 export type AgentCompactionMode = "default" | "safeguard";

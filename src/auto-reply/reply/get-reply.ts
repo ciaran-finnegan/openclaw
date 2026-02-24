@@ -12,6 +12,7 @@ import { type OpenClawConfig, loadConfig } from "../../config/config.js";
 import { applyLinkUnderstanding } from "../../link-understanding/apply.js";
 import { applyMediaUnderstanding } from "../../media-understanding/apply.js";
 import { defaultRuntime } from "../../runtime.js";
+import { resolveTaskRoute } from "../../task-routing/resolve-task-route.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext } from "../templating.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
@@ -207,6 +208,38 @@ export async function getReplyFromConfig(
     if (resolved) {
       provider = resolved.ref.provider;
       model = resolved.ref.model;
+    }
+  }
+
+  // Task-aware routing (IRM Phase 1) — only when enabled and no higher-priority override.
+  // Heartbeat model selection is handled above (lines 84-101); skip routing for heartbeats
+  // to avoid conflicting with the dedicated heartbeat model config path.
+  const routingConfig = agentCfg?.routing;
+  if (
+    routingConfig?.enabled &&
+    !opts?.isHeartbeat &&
+    !hasResolvedHeartbeatModelOverride &&
+    !hasSessionModelOverride &&
+    !channelModelOverride
+  ) {
+    const routingDecision = resolveTaskRoute({
+      routingConfig,
+      messageBody: bodyStripped ?? "",
+      context: {
+        isHeartbeat: false,
+        isSubAgent: Boolean(sessionEntry.spawnedBy),
+      },
+    });
+    if (routingDecision) {
+      const routedRef = resolveModelRefFromString({
+        raw: routingDecision.model,
+        defaultProvider,
+        aliasIndex,
+      });
+      if (routedRef) {
+        provider = routedRef.ref.provider;
+        model = routedRef.ref.model;
+      }
     }
   }
 

@@ -152,6 +152,47 @@ export const AgentDefaultsSchema = z
       .strict()
       .optional(),
     sandbox: AgentSandboxSchema,
+    routing: z
+      .object({
+        enabled: z.boolean().optional(),
+        strategy: z.literal("task-aware").optional(),
+        tiers: z
+          .record(
+            z.string(),
+            z
+              .object({
+                model: z.string(),
+                maxComplexity: z.number().min(0).max(1).optional(),
+              })
+              .strict(),
+          )
+          .optional(),
+        taskMap: z
+          .record(
+            z.enum([
+              "heartbeat",
+              "status",
+              "chat",
+              "writing",
+              "coding",
+              "planning",
+              "tool_use",
+              "sub_agent",
+            ]),
+            z.string(),
+          )
+          .optional(),
+        classifier: z
+          .object({
+            type: z.literal("rules").optional(),
+            confidenceThreshold: z.number().min(0).max(1).optional(),
+            fallbackTier: z.string().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .optional();
