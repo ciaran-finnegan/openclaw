@@ -1229,6 +1229,7 @@
                   "cli/plugins",
                   "cli/qr",
                   "cli/reset",
+                  "cli/routing",
                   "cli/sandbox",
                   "cli/security",
                   "cli/sessions",
