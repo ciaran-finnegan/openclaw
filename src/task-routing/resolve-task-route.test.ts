@@ -284,14 +284,13 @@ describe("resolveTaskRoute", () => {
         frontier: { model: "anthropic/claude-opus-4-6" },
       },
     };
-    // Multi-step list generates complexity > 0.1
+    // Sequencing language triggers hasMultiStep in complexity estimator (>0.25)
+    // but does NOT trigger hasMultiStepList in classifier (needs 3+ list items),
+    // so this classifies as "chat" → cheap tier, then upgrades via complexity.
     const result = resolveTaskRoute({
       routingConfig: config,
-      messageBody: `Please do these tasks:
-1. Create the module
-2. Write the tests
-3. Update documentation
-4. Deploy to staging`,
+      messageBody:
+        "First set up the database schema with all the tables, then run the migration scripts to populate initial data.",
       context: baseCtx,
     });
     expect(result).not.toBeNull();
@@ -327,14 +326,11 @@ describe("resolveTaskRoute", () => {
       },
       taskMap: { chat: "mid" },
     };
-    // Multi-step list complexity > 0.1
+    // Sequencing language triggers complexity > 0.1, classifies as chat → mid
     const result = resolveTaskRoute({
       routingConfig: config,
-      messageBody: `Please help with:
-1. Design the schema
-2. Write the migration
-3. Update the API
-4. Add the tests`,
+      messageBody:
+        "First design the schema carefully, then write all the migration scripts to populate the tables.",
       context: baseCtx,
     });
     expect(result!.tier).toBe("frontier");
@@ -349,15 +345,13 @@ describe("resolveTaskRoute", () => {
         mid: { model: "anthropic/claude-sonnet-4-6" },
         frontier: { model: "anthropic/claude-opus-4-6", maxComplexity: 0.05 },
       },
+      taskMap: { chat: "frontier" },
     };
-    // Coding → frontier, maxComplexity 0.05, even with complex message stays frontier
+    // chat → frontier via taskMap, maxComplexity 0.05, complexity exceeds but already at top tier
     const result = resolveTaskRoute({
       routingConfig: config,
-      messageBody: `Implement this complex system:
-1. Design patterns
-2. Write code
-3. Add tests
-4. Deploy`,
+      messageBody:
+        "First set up the database schema, then configure the application settings properly.",
       context: baseCtx,
     });
     expect(result!.tier).toBe("frontier");
@@ -379,13 +373,11 @@ describe("resolveTaskRoute", () => {
       warn: false,
       usageRatio: 0.95,
     };
-    // Complexity exceeds maxComplexity but budget gate caps at cheap
+    // Sequencing triggers complexity > 0.1, but budget gate caps at cheap
     const result = resolveTaskRoute({
       routingConfig: config,
-      messageBody: `Please do:
-1. One
-2. Two
-3. Three`,
+      messageBody:
+        "First prepare the environment variables, then deploy the application to production servers.",
       context: baseCtx,
       budgetGate: gate,
     });
@@ -402,13 +394,12 @@ describe("resolveTaskRoute", () => {
         frontier: { model: "anthropic/claude-opus-4-6" },
       },
     };
+    // Sequencing language triggers complexity > 0.1, classifies as chat → cheap
     // Would want to upgrade to mid, but mid isn't configured — stays cheap
     const result = resolveTaskRoute({
       routingConfig: config,
-      messageBody: `Please do:
-1. One
-2. Two
-3. Three`,
+      messageBody:
+        "First set up the infrastructure, then configure all the services and deploy them.",
       context: baseCtx,
     });
     expect(result!.tier).toBe("cheap");

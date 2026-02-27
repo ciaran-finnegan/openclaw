@@ -39,6 +39,14 @@ describe("extractComplexitySignals", () => {
     expect(signals.hasMultiStep).toBe(true);
   });
 
+  it("does not false-positive on sequencing words across separate sentences", () => {
+    const msg = `Finally, here is the summary of our meeting.
+This is an unrelated paragraph about something else entirely.
+Once the project is done we can celebrate.`;
+    const signals = extractComplexitySignals(msg);
+    expect(signals.hasMultiStep).toBe(false);
+  });
+
   it("counts tools from context", () => {
     const signals = extractComplexitySignals("do something", {
       requestedTools: ["browser", "shell", "calendar"],

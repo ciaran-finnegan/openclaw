@@ -12,11 +12,12 @@ export function registerRoutingCli(program: Command) {
   routing
     .command("update-catalogue")
     .description("Validate and display shipped benchmark catalogue info")
-    .action(async () => {
+    .option("--check", "Check if a newer catalogue version is available", false)
+    .action(async (opts) => {
       await runRoutingCommand(async () => {
         const { routingUpdateCatalogueCommand } =
           await import("../commands/routing/update-catalogue.js");
-        await routingUpdateCatalogueCommand();
+        await routingUpdateCatalogueCommand(opts);
       });
     });
 
@@ -89,6 +90,51 @@ export function registerRoutingCli(program: Command) {
       await runRoutingCommand(async () => {
         const { routingFeedbackCommand } = await import("../commands/routing/feedback.js");
         await routingFeedbackCommand(opts);
+      });
+    });
+
+  routing
+    .command("setup")
+    .description("Interactive wizard to configure routing tiers")
+    .action(async () => {
+      await runRoutingCommand(async () => {
+        const { routingSetupCommand } = await import("../commands/routing/setup.js");
+        await routingSetupCommand();
+      });
+    });
+
+  routing
+    .command("tiers")
+    .description("Display current tier-to-model mappings")
+    .option("--json", "Output JSON", false)
+    .action(async (opts) => {
+      await runRoutingCommand(async () => {
+        const { routingTiersCommand } = await import("../commands/routing/tiers.js");
+        await routingTiersCommand(opts);
+      });
+    });
+
+  routing
+    .command("set <tier> <model>")
+    .description(
+      "Set the model for a routing tier (e.g. openclaw routing set cheap google/gemini-2.5-flash)",
+    )
+    .action(async (tier: string, model: string) => {
+      await runRoutingCommand(async () => {
+        const { routingSetCommand } = await import("../commands/routing/set.js");
+        await routingSetCommand(tier, model);
+      });
+    });
+
+  routing
+    .command("observed")
+    .description("Show observed per-model per-task performance metrics")
+    .option("--json", "Output JSON", false)
+    .option("--days <n>", "Lookback period in days (default: 30)")
+    .action(async (opts) => {
+      await runRoutingCommand(async () => {
+        const { routingObservedCommand } = await import("../commands/routing/observed.js");
+        await routingObservedCommand(opts);
       });
     });
 }

@@ -1,4 +1,5 @@
 import {
+  resolveAgentConfig,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
   resolveSessionAgentId,
@@ -20,7 +21,11 @@ import {
   appendRoutingFeedback,
 } from "../../task-routing/catalogue/observed.js";
 import type { RoutingEvent, RoutingFeedbackEvent } from "../../task-routing/catalogue/types.js";
-import { resolveTaskRoute } from "../../task-routing/resolve-task-route.js";
+import {
+  TIER_PRIORITY,
+  getRoutingEscalationFallbacks,
+  resolveTaskRoute,
+} from "../../task-routing/resolve-task-route.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext } from "../templating.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
@@ -221,16 +226,26 @@ export async function getReplyFromConfig(
   }
 
   // Task-aware routing (IRM Phase 1+2+3) — only when enabled and no higher-priority override.
-  // Heartbeat model selection is handled above; skip routing for heartbeats
-  // to avoid conflicting with the dedicated heartbeat model config path.
-  const routingConfig = agentCfg?.routing;
+  // Heartbeats route through the classifier (→ cheap tier) unless a dedicated
+  // heartbeat model override is configured, in which case the override above
+  // already selected the model.
+  // Merge per-agent routing overrides (shallow) over global defaults.
+  const perAgentRouting = resolveAgentConfig(cfg, agentId)?.routing;
+  const routingConfig = perAgentRouting
+    ? {
+        ...agentCfg?.routing,
+        ...perAgentRouting,
+        // Deep-merge tiers so per-agent can override individual tiers.
+        tiers: { ...agentCfg?.routing?.tiers, ...perAgentRouting.tiers },
+        taskMap: { ...agentCfg?.routing?.taskMap, ...perAgentRouting.taskMap },
+      }
+    : agentCfg?.routing;
   let activeRoutingDecision: ReturnType<typeof resolveTaskRoute> = null;
   let routingDecisionMs = 0; // time spent in budget gate + classification + scoring
   let activeBudgetGate: Awaited<ReturnType<typeof applyBudgetGate>> | undefined;
   const replyStartMs = Date.now(); // tracks total round-trip for latencyMs
   if (
     routingConfig?.enabled &&
-    !opts?.isHeartbeat &&
     !hasResolvedHeartbeatModelOverride &&
     !hasSessionModelOverride &&
     !channelModelOverride
@@ -246,10 +261,11 @@ export async function getReplyFromConfig(
       routingConfig,
       messageBody: bodyStripped ?? "",
       context: {
-        isHeartbeat: false,
+        isHeartbeat: Boolean(opts?.isHeartbeat),
         isSubAgent: Boolean(sessionEntry.spawnedBy),
       },
       budgetGate,
+      cfg,
     });
     routingDecisionMs = Date.now() - routingStartMs;
 
@@ -347,7 +363,9 @@ export async function getReplyFromConfig(
         signal: "model_override",
         overriddenTo: resolvedLabel,
       };
-      void appendRoutingFeedback(feedbackEvent).catch(() => {});
+      void appendRoutingFeedback(feedbackEvent).catch(() => {
+        // Best-effort logging — do not block the reply path.
+      });
     }
   }
 
@@ -451,6 +469,12 @@ export async function getReplyFromConfig(
     workspaceDir,
     abortedLastRun,
     usageCapture,
+    // IRM: when routing is active, inject escalation fallbacks so retries
+    // try the next-higher tier before falling back to the normal chain.
+    routingEscalationFallbacks:
+      activeRoutingDecision && routingConfig
+        ? getRoutingEscalationFallbacks(activeRoutingDecision, routingConfig)
+        : undefined,
   });
 
   // IRM Phase 3: log observed routing event with real token counts and cost.
@@ -490,19 +514,21 @@ export async function getReplyFromConfig(
     let escalated = false;
     if (retried && usageCapture.fallbackModel && routingConfig.tiers) {
       // Check if the fallback model belongs to a higher tier than the originally routed tier.
+      // TIER_PRIORITY is ordered highest-capability-first: ["frontier", "mid", "cheap"].
+      // A lower index = higher tier. Escalation means fallback landed on a higher tier.
       const routedTier = activeRoutingDecision.tier;
       const fallbackModelRef = usageCapture.fallbackModel;
-      const tierOrder = ["cheap", "mid", "frontier"];
-      const routedIdx = tierOrder.indexOf(routedTier);
-      // Find which tier the fallback model belongs to.
+      const routedIdx = TIER_PRIORITY.indexOf(routedTier);
       let fallbackIdx = -1;
-      for (const [name, tc] of Object.entries(routingConfig.tiers)) {
-        if (tc.model === fallbackModelRef || fallbackModelRef.endsWith(`/${tc.model}`)) {
-          fallbackIdx = tierOrder.indexOf(name);
+      const tierEntries = routingConfig?.tiers ?? {};
+      for (const [name, tc] of Object.entries(tierEntries)) {
+        if (tc?.model === fallbackModelRef || fallbackModelRef?.endsWith(`/${tc?.model}`)) {
+          fallbackIdx = TIER_PRIORITY.indexOf(name);
           break;
         }
       }
-      escalated = fallbackIdx > routedIdx && routedIdx !== -1;
+      // Escalated if the fallback tier has a lower index (= higher capability) than the routed tier.
+      escalated = fallbackIdx !== -1 && routedIdx !== -1 && fallbackIdx < routedIdx;
     }
 
     const event: RoutingEvent = {
@@ -522,7 +548,9 @@ export async function getReplyFromConfig(
       wouldHaveUsedModel,
       routingLatencyMs: routingDecisionMs,
     };
-    void appendRoutingEvent(event).catch(() => {});
+    void appendRoutingEvent(event, undefined, routingConfig?.logging).catch(() => {
+      // Best-effort logging — do not block the reply path.
+    });
 
     // Phase 4: log feedback events for retry/escalation.
     if (retried && sessionKey) {
@@ -535,7 +563,9 @@ export async function getReplyFromConfig(
         overriddenTo: usageCapture.fallbackModel,
         reason: "fallback triggered during agent run",
       };
-      void appendRoutingFeedback(feedbackEvent).catch(() => {});
+      void appendRoutingFeedback(feedbackEvent).catch(() => {
+        // Best-effort logging — do not block the reply path.
+      });
     }
   }
 

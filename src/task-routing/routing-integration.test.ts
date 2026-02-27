@@ -20,7 +20,7 @@ import type {
   RoutingEvent,
   RoutingFeedbackEvent,
 } from "./catalogue/types.js";
-import { resolveTaskRoute } from "./resolve-task-route.js";
+import { getRoutingEscalationFallbacks, resolveTaskRoute } from "./resolve-task-route.js";
 import type { ClassifierContext, TaskRoutingConfig, TaskType } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -723,5 +723,122 @@ describe("integration: budget + complexity + allowlist interaction", () => {
     // Allowlist allows sonnet
     const allowed = isModelAllowed(result!.model, allowlistCfg);
     expect(allowed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 1: Heartbeat messages route through routing to cheap tier
+// ---------------------------------------------------------------------------
+
+describe("heartbeat routing (Gap 1)", () => {
+  it("routes heartbeat messages to cheap tier via classifier", () => {
+    const result = resolveTaskRoute({
+      routingConfig: baseConfig,
+      messageBody: "heartbeat check",
+      context: { isHeartbeat: true, isSubAgent: false },
+    });
+    expect(result).not.toBeNull();
+    expect(result!.tier).toBe("cheap");
+    expect(result!.classification.task).toBe("heartbeat");
+    expect(result!.model).toBe("anthropic/claude-haiku-4-5");
+  });
+
+  it("heartbeat classification has confidence 1.0", () => {
+    const result = resolveTaskRoute({
+      routingConfig: baseConfig,
+      messageBody: "anything",
+      context: { isHeartbeat: true, isSubAgent: false },
+    });
+    expect(result!.classification.confidence).toBe(1.0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 2: Retry escalation fallbacks
+// ---------------------------------------------------------------------------
+
+describe("retry escalation fallbacks (Gap 2)", () => {
+  it("returns mid and frontier as escalation fallbacks for cheap tier", () => {
+    const decision = resolveTaskRoute({
+      routingConfig: baseConfig,
+      messageBody: "hello",
+      context: baseCtx,
+    })!;
+    expect(decision.tier).toBe("cheap");
+
+    const fallbacks = getRoutingEscalationFallbacks(decision, baseConfig);
+    expect(fallbacks).toEqual(["anthropic/claude-sonnet-4-6", "anthropic/claude-opus-4-6"]);
+  });
+
+  it("returns frontier as escalation fallback for mid tier", () => {
+    const decision = resolveTaskRoute({
+      routingConfig: baseConfig,
+      messageBody: "draft a blog post about testing best practices",
+      context: baseCtx,
+    })!;
+    expect(decision.tier).toBe("mid");
+
+    const fallbacks = getRoutingEscalationFallbacks(decision, baseConfig);
+    expect(fallbacks).toEqual(["anthropic/claude-opus-4-6"]);
+  });
+
+  it("returns empty fallbacks for frontier tier (already at top)", () => {
+    const decision = resolveTaskRoute({
+      routingConfig: baseConfig,
+      messageBody: "write a function to sort an array",
+      context: baseCtx,
+    })!;
+    expect(decision.tier).toBe("frontier");
+
+    const fallbacks = getRoutingEscalationFallbacks(decision, baseConfig);
+    expect(fallbacks).toEqual([]);
+  });
+
+  it("skips tiers that are not configured", () => {
+    const config: TaskRoutingConfig = {
+      ...baseConfig,
+      tiers: {
+        cheap: { model: "anthropic/claude-haiku-4-5" },
+        // no mid tier
+        frontier: { model: "anthropic/claude-opus-4-6" },
+      },
+    };
+    const decision = resolveTaskRoute({
+      routingConfig: config,
+      messageBody: "hello",
+      context: baseCtx,
+    })!;
+    expect(decision.tier).toBe("cheap");
+
+    const fallbacks = getRoutingEscalationFallbacks(decision, config);
+    // mid is not configured, so only frontier is returned
+    expect(fallbacks).toEqual(["anthropic/claude-opus-4-6"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 10: Logging config (enabled/disabled)
+// ---------------------------------------------------------------------------
+
+describe("logging config (Gap 10)", () => {
+  it("skips event logging when logging.enabled is false", async () => {
+    const event = makeEvent();
+    await appendRoutingEvent(event, tmpDir, { enabled: false });
+    const events = await readRoutingEvents(tmpDir);
+    expect(events).toHaveLength(0);
+  });
+
+  it("logs events normally when logging.enabled is true", async () => {
+    const event = makeEvent();
+    await appendRoutingEvent(event, tmpDir, { enabled: true });
+    const events = await readRoutingEvents(tmpDir);
+    expect(events).toHaveLength(1);
+  });
+
+  it("logs events normally when logging config is undefined", async () => {
+    const event = makeEvent();
+    await appendRoutingEvent(event, tmpDir, undefined);
+    const events = await readRoutingEvents(tmpDir);
+    expect(events).toHaveLength(1);
   });
 });

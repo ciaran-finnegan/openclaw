@@ -146,15 +146,23 @@ export const resolveEnforceFinalTag = (run: FollowupRun["run"], provider: string
   Boolean(run.enforceFinalTag || isReasoningTagProvider(provider));
 
 export function resolveModelFallbackOptions(run: FollowupRun["run"]) {
+  const agentFallbacks = resolveAgentModelFallbacksOverride(
+    run.config,
+    resolveAgentIdFromSessionKey(run.sessionKey),
+  );
+
+  // IRM: prepend routing escalation models (next-higher-tier) before normal fallbacks.
+  const fallbacksOverride =
+    run.routingEscalationFallbacks && run.routingEscalationFallbacks.length > 0
+      ? [...run.routingEscalationFallbacks, ...(agentFallbacks ?? [])]
+      : agentFallbacks;
+
   return {
     cfg: run.config,
     provider: run.provider,
     model: run.model,
     agentDir: run.agentDir,
-    fallbacksOverride: resolveAgentModelFallbacksOverride(
-      run.config,
-      resolveAgentIdFromSessionKey(run.sessionKey),
-    ),
+    fallbacksOverride,
   };
 }
 

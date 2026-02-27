@@ -79,6 +79,8 @@ export type FollowupRun = {
     ownerNumbers?: string[];
     extraSystemPrompt?: string;
     enforceFinalTag?: boolean;
+    /** IRM: escalation fallback models prepended to the fallback chain when routing is active. */
+    routingEscalationFallbacks?: string[];
   };
 };
 

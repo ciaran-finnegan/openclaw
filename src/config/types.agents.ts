@@ -1,4 +1,5 @@
 import type { ChatType } from "../channels/chat-type.js";
+import type { TaskRoutingConfig } from "../task-routing/types.js";
 import type { AgentDefaultsConfig } from "./types.agent-defaults.js";
 import type { AgentModelConfig, AgentSandboxConfig } from "./types.agents-shared.js";
 import type { HumanDelayConfig, IdentityConfig } from "./types.base.js";
@@ -32,6 +33,8 @@ export type AgentConfig = {
   /** Optional per-agent stream params (e.g. cacheRetention, temperature). */
   params?: Record<string, unknown>;
   tools?: AgentToolsConfig;
+  /** Per-agent routing overrides (merged over agents.defaults.routing). */
+  routing?: Partial<TaskRoutingConfig>;
 };
 
 export type AgentsConfig = {

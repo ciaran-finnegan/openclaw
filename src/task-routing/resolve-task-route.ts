@@ -1,3 +1,5 @@
+import type { OpenClawConfig } from "../config/config.js";
+import { autoDetectTiers } from "./auto-detect-tiers.js";
 import type { BudgetGateResult } from "./catalogue/budget.js";
 import { scoreModelSync } from "./catalogue/scorer.js";
 import type { CatalogueModelEntry, ModelProfile, ObservedPerformance } from "./catalogue/types.js";
@@ -5,8 +7,11 @@ import { classifyTask } from "./classifier.js";
 import { estimateComplexity } from "./complexity.js";
 import type { ClassifierContext, RoutingDecision, TaskRoutingConfig, TaskType } from "./types.js";
 
-/** Tier priority order for budget-gated downgrades. */
-const TIER_PRIORITY: readonly string[] = ["frontier", "mid", "cheap"];
+/** Session-scoped cache for auto-detected tiers (avoids re-scanning on every request). */
+let autoDetectedTiersCache: Record<string, import("./types.js").TaskRoutingTierConfig> | undefined;
+
+/** Tier priority order: highest capability first. Used for downgrades, upgrades, and escalation detection. */
+export const TIER_PRIORITY: readonly string[] = ["frontier", "mid", "cheap"];
 
 /** Default task → tier mapping when user config omits taskMap. */
 const DEFAULT_TASK_MAP: Record<TaskType, string> = {
@@ -41,8 +46,25 @@ export function resolveTaskRoute(params: {
   scorerData?: ScorerData;
   /** Pre-computed budget gate result. When set, may override the tier selection. */
   budgetGate?: BudgetGateResult;
+  /** Full config — used for auto-detecting tiers when routingConfig.tiers is empty. */
+  cfg?: OpenClawConfig;
 }): RoutingDecision | null {
-  const { routingConfig, messageBody, context, scorerData, budgetGate } = params;
+  const { routingConfig, messageBody, context, scorerData, budgetGate, cfg } = params;
+
+  // Auto-detect tiers from provider config when tiers are empty/missing.
+  let effectiveTiers = routingConfig.tiers;
+  if (!effectiveTiers || Object.keys(effectiveTiers).length === 0) {
+    if (cfg) {
+      if (!autoDetectedTiersCache) {
+        autoDetectedTiersCache = autoDetectTiers(cfg);
+      }
+      effectiveTiers =
+        Object.keys(autoDetectedTiersCache).length > 0 ? autoDetectedTiersCache : undefined;
+    }
+    if (!effectiveTiers) {
+      return null;
+    }
+  }
 
   // Budget gate: block the request entirely if configured.
   if (budgetGate?.blocked) {
@@ -66,23 +88,27 @@ export function resolveTaskRoute(params: {
 
   // Budget gate: downgrade tier if spending exceeds thresholds.
   if (budgetGate?.maxTier) {
-    tierName = downgradeTier(tierName, budgetGate.maxTier, routingConfig);
+    tierName = downgradeTier(tierName, budgetGate.maxTier, {
+      ...routingConfig,
+      tiers: effectiveTiers,
+    });
   }
 
   // Complexity check: if the selected tier has maxComplexity and the message
   // exceeds it, bump up to the next higher tier (unless budget-gated).
-  const tierCfgForComplexity = routingConfig.tiers?.[tierName];
+  const tierCfgForComplexity = effectiveTiers[tierName];
   if (tierCfgForComplexity?.maxComplexity !== undefined) {
     const complexity = estimateComplexity(messageBody, context);
     if (complexity > tierCfgForComplexity.maxComplexity) {
-      const upgraded = upgradeTier(tierName, routingConfig, budgetGate?.maxTier);
+      const configWithTiers = { ...routingConfig, tiers: effectiveTiers };
+      const upgraded = upgradeTier(tierName, configWithTiers, budgetGate?.maxTier);
       if (upgraded) {
         tierName = upgraded;
       }
     }
   }
 
-  const tierConfig = routingConfig.tiers?.[tierName];
+  const tierConfig = effectiveTiers[tierName];
   if (!tierConfig) {
     return null;
   }
@@ -107,6 +133,45 @@ export function resolveTaskRoute(params: {
     model: tierConfig.model,
     score,
   };
+}
+
+/** Clear the auto-detected tiers cache (exposed for test isolation). */
+export function _resetAutoDetectedTiersCache(): void {
+  autoDetectedTiersCache = undefined;
+}
+
+/**
+ * Compute the escalation fallback models for a routing decision.
+ * Returns models from the next-higher tier(s) that the retry system should
+ * attempt before falling back to the normal fallback chain.
+ *
+ * Example: if routing selected "cheap", returns ["mid-tier-model", "frontier-tier-model"].
+ */
+export function getRoutingEscalationFallbacks(
+  decision: RoutingDecision,
+  routingConfig: TaskRoutingConfig,
+): string[] {
+  const tiers = routingConfig.tiers;
+  if (!tiers) {
+    return [];
+  }
+
+  const currentIdx = TIER_PRIORITY.indexOf(decision.tier);
+  if (currentIdx <= 0) {
+    // Already at frontier or unknown tier — no escalation possible.
+    return [];
+  }
+
+  const fallbacks: string[] = [];
+  // Walk from one tier above to the top (frontier).
+  for (let i = currentIdx - 1; i >= 0; i--) {
+    const tierName = TIER_PRIORITY[i];
+    const tierCfg = tiers[tierName];
+    if (tierCfg && tierCfg.model !== decision.model) {
+      fallbacks.push(tierCfg.model);
+    }
+  }
+  return fallbacks;
 }
 
 /**
@@ -156,7 +221,7 @@ function downgradeTier(currentTier: string, maxTier: string, config: TaskRouting
     return currentIdx >= maxIdx ? currentTier : TIER_PRIORITY[maxIdx];
   }
 
-  // Current tier is custom / unknown: if it exists in config, keep it; otherwise use maxTier.
+  // Current tier is unknown — if maxTier is configured, apply it; otherwise keep current tier unchanged.
   if (config.tiers?.[maxTier]) {
     return maxTier;
   }

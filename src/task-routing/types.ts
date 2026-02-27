@@ -44,6 +44,13 @@ export type BudgetConfig = {
   overBudgetAction?: OverBudgetAction;
 };
 
+export type TaskRoutingLoggingConfig = {
+  /** Enable observed performance event logging (default: true). */
+  enabled?: boolean;
+  /** Custom path for the observed JSONL log file. */
+  logFile?: string;
+};
+
 export type TaskRoutingConfig = {
   enabled?: boolean;
   strategy?: "task-aware";
@@ -59,6 +66,8 @@ export type TaskRoutingConfig = {
     };
   };
   budget?: BudgetConfig;
+  /** Event logging configuration. */
+  logging?: TaskRoutingLoggingConfig;
 };
 
 export type RoutingDecision = {

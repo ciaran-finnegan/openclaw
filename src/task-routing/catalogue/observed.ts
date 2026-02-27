@@ -1,6 +1,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { resolveStateDir } from "../../config/paths.js";
+import type { TaskRoutingLoggingConfig } from "../types.js";
 import type { TaskType } from "../types.js";
 import type { ObservedPerformance, RoutingEvent, RoutingFeedbackEvent } from "./types.js";
 
@@ -14,15 +15,28 @@ const OBSERVED_FILENAME = "observed.jsonl";
  */
 const MAX_EVENTS = 10_000;
 
-/** Resolve path to the observed performance JSONL log. */
-export function resolveObservedPath(stateDir?: string): string {
+/** Resolve path to the observed performance JSONL log, respecting logging config. */
+export function resolveObservedPath(stateDir?: string, logFile?: string): string {
+  if (logFile) {
+    return logFile;
+  }
   const base = stateDir ?? resolveStateDir();
   return path.join(base, ROUTING_DIR, OBSERVED_FILENAME);
 }
 
-/** Append a single routing event to the JSONL log (fire-and-forget). */
-export async function appendRoutingEvent(event: RoutingEvent, stateDir?: string): Promise<void> {
-  const filePath = resolveObservedPath(stateDir);
+/**
+ * Append a single routing event to the JSONL log (fire-and-forget).
+ * Respects `loggingConfig.enabled` — skips write when logging is disabled.
+ */
+export async function appendRoutingEvent(
+  event: RoutingEvent,
+  stateDir?: string,
+  loggingConfig?: TaskRoutingLoggingConfig,
+): Promise<void> {
+  if (loggingConfig?.enabled === false) {
+    return;
+  }
+  const filePath = resolveObservedPath(stateDir, loggingConfig?.logFile);
   await fsp.mkdir(path.dirname(filePath), { recursive: true });
   await fsp.appendFile(filePath, `${JSON.stringify(event)}\n`, "utf8");
 }

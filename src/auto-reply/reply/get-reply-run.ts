@@ -176,6 +176,8 @@ type RunPreparedReplyParams = {
   abortedLastRun: boolean;
   /** Mutable ref populated with token usage after the run completes. */
   usageCapture?: UsageCapture;
+  /** IRM: escalation fallback models prepended to fallback chain when routing is active. */
+  routingEscalationFallbacks?: string[];
 };
 
 export async function runPreparedReply(
@@ -495,6 +497,9 @@ export async function runPreparedReply(
       ownerNumbers: command.ownerList.length > 0 ? command.ownerList : undefined,
       extraSystemPrompt: extraSystemPrompt || undefined,
       ...(isReasoningTagProvider(provider) ? { enforceFinalTag: true } : {}),
+      ...(params.routingEscalationFallbacks && params.routingEscalationFallbacks.length > 0
+        ? { routingEscalationFallbacks: params.routingEscalationFallbacks }
+        : {}),
     },
   };
 

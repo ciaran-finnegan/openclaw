@@ -15,9 +15,10 @@ export type ComplexitySignals = {
 /** Match 3+ list items (numbered or bulleted). */
 const LIST_ITEM = /^\s*(?:\d+[.)]\s|[-*]\s)/;
 
-/** Sequencing language: "first...then...", "step 1...step 2...", etc. */
+/** Sequencing language: "first...then...", "step 1...step 2...", etc.
+ * Uses [^.!?\n] instead of `.` to avoid cross-sentence/paragraph false positives. */
 const SEQUENCING_PATTERN =
-  /\b(?:first\b.*?\bthen\b|step\s+\d|phase\s+\d|next\b.*?\bafter\b|finally\b.*?\bonce\b)/is;
+  /\b(?:first\b[^.!?\n]*?\bthen\b|step\s+\d|phase\s+\d|next\b[^.!?\n]*?\bafter\b|finally\b[^.!?\n]*?\bonce\b)/i;
 
 /**
  * Detect multi-step instructions: either 3+ list items or sequencing language.
@@ -61,11 +62,13 @@ export function extractComplexitySignals(
 /**
  * Estimate complexity of a message on a 0.0–1.0 scale.
  *
- * Scoring weights:
+ * Active scoring weights:
  * - Word count:   0–0.4 (0 at <=50 words, 0.4 at >=500 words, linear between)
  * - Multi-step:   0.25 bonus if detected
  * - Tool count:   0–0.2 (0.05 per tool, capped at 0.2)
- * - Attachments:  0.15 bonus if present
+ *
+ * Reserved (not yet wired):
+ * - Attachments:  0.15 bonus when media context is connected
  *
  * Result is clamped to [0, 1].
  */

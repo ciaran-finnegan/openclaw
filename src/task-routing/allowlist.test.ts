@@ -1,12 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { isModelAllowed } from "./allowlist.js";
 import type { OpenClawConfig } from "../config/config.js";
+import { isModelAllowed } from "./allowlist.js";
 
 function makeConfig(providers?: Record<string, { models: Array<{ id: string }> }>): OpenClawConfig {
   if (!providers) {
     return {} as OpenClawConfig;
   }
-  const modelsProviders: Record<string, { baseUrl: string; models: Array<{ id: string; name: string; reasoning: boolean; input: Array<"text">; cost: { input: number; output: number; cacheRead: number; cacheWrite: number }; contextWindow: number; maxTokens: number }> }> = {};
+  const modelsProviders: Record<
+    string,
+    {
+      baseUrl: string;
+      models: Array<{
+        id: string;
+        name: string;
+        reasoning: boolean;
+        input: Array<"text">;
+        cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+        contextWindow: number;
+        maxTokens: number;
+      }>;
+    }
+  > = {};
   for (const [name, cfg] of Object.entries(providers)) {
     modelsProviders[name] = {
       baseUrl: `https://${name}.example.com`,

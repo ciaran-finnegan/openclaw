@@ -17,10 +17,10 @@ export function isModelAllowed(modelRef: string, config: OpenClawConfig): boolea
     return true;
   }
 
-  // Parse "provider/model" format.
+  // Parse "provider/model" format. Tier config should always use "provider/model"
+  // format, but if it doesn't, we can't match against a specific provider's allowlist.
   const slashIdx = modelRef.indexOf("/");
   if (slashIdx === -1) {
-    // No provider prefix — can't verify, allow by default.
     return true;
   }
 
